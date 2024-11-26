@@ -18,7 +18,9 @@ class DNode():
         self.pathcost = 0 if time_slice==parameters.horizon else 1e9
         self.next_node = None
         # Absolute energy level
-        self.bottom_temp = self.top_temp - self.params.delta_T(self.top_temp)
+        tt_idx = parameters.available_top_temps.index(top_temp)
+        tt_idx = tt_idx-1 if tt_idx>0 else tt_idx
+        self.bottom_temp = parameters.available_top_temps[tt_idx]
         self.energy = self.get_energy()
         self.index = None #TODO: index
 
@@ -67,7 +69,7 @@ class DForecast():
         if not (len(self.dp)==len(self.lmp)==len(self.oat)==len(time_list)):
             raise ValueError(f"The provided CSV files must contain {len(time_list)} rows.")
 
-        self.load = [params.required_heating_power(oat,ws)/2 for oat,ws in zip(self.oat,self.ws)]
+        self.load = [params.required_heating_power(oat,ws) for oat,ws in zip(self.oat,self.ws)]
         self.rswt = [params.required_swt(x) for x in self.load]
 
         max_load_elec = max(self.load) / params.COP(min(self.oat), max(self.rswt))
