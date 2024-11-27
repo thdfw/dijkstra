@@ -1,6 +1,11 @@
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize, ListedColormap, BoundaryNorm
+import os
+import pandas as pd
+import numpy as np
+from openpyxl.styles import PatternFill, Alignment, Font
+from openpyxl.drawing.image import Image
 from config import DParams
 from dtypes import DNode, DEdge, DForecast
 
@@ -16,6 +21,7 @@ class DGraph():
         self.solve_dijkstra()
         print("Done")
         self.plot()
+        self.export_excel()
 
     def create_nodes(self):
         self.initial_node = DNode(0, self.params.initial_top_temp, self.params.initial_thermocline, self.params)
@@ -29,9 +35,9 @@ class DGraph():
                 if (time_slice, top_temp, thermocline) != (0, self.params.initial_top_temp, self.params.initial_thermocline)
             )
             # TODO: check if you need index
-            # self.nodes_by_energy = sorted(self.nodes[time_slice], key=lambda x: (x.energy, x.top_temp), reverse=True)
-            # for n in self.nodes[time_slice]:
-            #     n.index = self.nodes_by_energy.index(n)+1
+            self.nodes_by_energy = sorted(self.nodes[time_slice], key=lambda x: (x.energy, x.top_temp), reverse=True)
+            for n in self.nodes[time_slice]:
+                n.index = self.nodes_by_energy.index(n)+1
 
     def create_edges(self):
         self.edges = {}
@@ -56,8 +62,8 @@ class DGraph():
                     hp_heat_out = store_heat_in + self.forecasts.load[h] + losses
                     
                     # This condition reduces the amount of times we need to compute the COP
-                    if (hp_heat_out/self.params.min_cop <= self.params.max_hp_elec_in and
-                        hp_heat_out/self.params.max_cop >= self.params.min_hp_elec_in):
+                    if (hp_heat_out/self.params.max_cop <= self.params.max_hp_elec_in and
+                        hp_heat_out/self.params.min_cop >= self.params.min_hp_elec_in):
                     
                         cop = self.params.COP(oat=self.forecasts.oat[h], lwt=node_next.top_temp)
 
@@ -89,6 +95,8 @@ class DGraph():
                     best_edge = best_edge_pos if (-best_edge_neg.hp_heat_out >= best_edge_pos.hp_heat_out) else best_edge_neg
                 node.pathcost = best_edge.head.pathcost + best_edge.cost
                 node.next_node = best_edge.head
+        # for a in self.edges[self.initial_node]:
+        #     print(a)
 
     def plot(self):
         # Walk along the shortest path (sp)
@@ -164,5 +172,119 @@ class DGraph():
         plt.savefig('plot.png', dpi=130)
         plt.show()
 
+    def export_excel(self):
+        print("Exporting to Excel...")
+        # Along the shortest path
+        electricitiy_used, heat_delivered = [], []
+        node_i = self.initial_node
+        while node_i.next_node is not None:
+            heat_to_store = node_i.next_node.energy - node_i.energy
+            losses = self.params.storage_losses_percent/100*(node_i.energy-self.bottom_node.energy)
+            if losses<self.energy_between_consecutive_states and losses>0 and self.forecasts.load[node_i.time_slice]==0:
+                losses = self.energy_between_consecutive_states + 1/1e9
+            heat_output_HP = heat_to_store + self.forecasts.load[node_i.time_slice] + losses
+            cop = self.params.COP(oat=self.forecasts.oat[node_i.time_slice], lwt=node_i.next_node.top_temp)
+            electricitiy_used.append(heat_output_HP / cop)
+            heat_delivered.append(heat_output_HP)
+            node_i = node_i.next_node
+        # First dataframe: the Dijkstra graph
+        dijkstra_pathcosts = {}
+        dijkstra_pathcosts['Top Temp [F]'] = [x.top_temp for x in self.nodes_by_energy]
+        dijkstra_pathcosts['Thermocline'] = [x.thermocline for x in self.nodes_by_energy]
+        dijkstra_pathcosts['Index'] = list(range(1,len(self.nodes_by_energy)+1))
+        dijkstra_nextnodes = dijkstra_pathcosts.copy()
+        for h in range(self.params.horizon):
+            dijkstra_pathcosts[h] = [round(x.pathcost,2) for x in sorted(self.nodes[h], key=lambda x: x.index)]
+            dijkstra_nextnodes[h] = [x.next_node.index for x in sorted(self.nodes[h], key=lambda x: x.index)]
+        dijkstra_pathcosts[self.params.horizon] = [0 for x in self.nodes[self.params.horizon]]
+        dijkstra_nextnodes[self.params.horizon] = [np.nan for x in self.nodes[self.params.horizon]]
+        dijkstra_pathcosts_df = pd.DataFrame(dijkstra_pathcosts)
+        dijkstra_nextnodes_df = pd.DataFrame(dijkstra_nextnodes)
+        # Second dataframe: the forecasts
+        forecast_df = pd.DataFrame({'Forecast':['0'], 'Unit':['0'], **{h: [0.0] for h in range(self.params.horizon+1)}})
+        forecast_df.loc[0] = ['Price - total'] + ['cts/kWh'] + self.forecasts.elec_price
+        forecast_df.loc[1] = ['Price - distribution'] + ['cts/kWh'] + self.forecasts.dp
+        forecast_df.loc[2] = ['Price - LMP'] + ['cts/kWh'] + self.forecasts.lmp
+        forecast_df.loc[3] = ['Heating load'] + ['kW'] + [round(x,2) for x in self.forecasts.load]
+        forecast_df.loc[4] = ['OAT'] + ['F'] + [round(x,2) for x in self.forecasts.oat]
+        forecast_df.loc[5] = ['Required SWT'] + ['F'] + [round(x) for x in self.forecasts.rswt]
+        # Third dataframe: the shortest path
+        shortestpath_df = pd.DataFrame({'Shortest path':['0'], 'Unit':['0'], **{h: [0.0] for h in range(self.params.horizon+1)}})
+        shortestpath_df.loc[0] = ['Electricity used'] + ['kWh'] + [round(x,3) for x in electricitiy_used] + [0]
+        shortestpath_df.loc[1] = ['Heat delivered'] + ['kWh'] + [round(x,3) for x in heat_delivered] + [0]
+        shortestpath_df.loc[2] = ['Cost - total'] + ['cts'] + [round(x*y,2) for x,y in zip(electricitiy_used, self.forecasts.elec_price)] + [0]
+        shortestpath_df.loc[3] = ['Cost - distribution'] + ['cts'] + [round(x*y,2) for x,y in zip(electricitiy_used, self.forecasts.dp)] + [0]
+        shortestpath_df.loc[4] = ['Cost - LMP'] + ['cts'] + [round(x*y,2) for x,y in zip(electricitiy_used, self.forecasts.lmp)] + [0]
+        # Final dataframe: the results
+        total_usd = round(self.initial_node.pathcost,2)
+        total_elec = round(sum(electricitiy_used),2)
+        total_heat = round(sum(heat_delivered),2)
+        next_index = self.initial_node.next_node.index
+        results = ['Cost ($)', total_usd, 'Electricity (kWh)', total_elec, 'Heat (kWh)', total_heat, 'Next step index', next_index]
+        results_df = pd.DataFrame({'RESULTS':results})
+        # Highlight shortest path
+        highlight_positions = []
+        node_i = self.initial_node
+        while node_i.next_node is not None:
+            highlight_positions.append((node_i.index+len(forecast_df)+len(shortestpath_df)+2, 3+node_i.time_slice))
+            node_i = node_i.next_node
+        highlight_positions.append((node_i.index+len(forecast_df)+len(shortestpath_df)+2, 3+node_i.time_slice))
+        # Read the parameters
+        parameters = {}
+        with open('parameters.conf', 'r') as file:
+            for line in file:
+                stripped_line = line.strip()
+                if stripped_line and not stripped_line.startswith('#'):
+                    key_value = stripped_line.split('=')
+                    if len(key_value) == 2:
+                        key = key_value[0].strip()
+                        value = key_value[1].strip()
+                        parameters[key] = value
+        parameters_df = pd.DataFrame(list(parameters.items()), columns=['Variable', 'Value'])
+        # Write to Excel
+        os.makedirs('results', exist_ok=True)
+        NOW_FOR_FILE = 0
+        file_path = os.path.join('results', f'result_{NOW_FOR_FILE}.xlsx')
+        with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+            results_df.to_excel(writer, index=False, sheet_name='Pathcost')
+            results_df.to_excel(writer, index=False, sheet_name='Next node')
+            forecast_df.to_excel(writer, index=False, startcol=1, sheet_name='Pathcost')
+            forecast_df.to_excel(writer, index=False, startcol=1, sheet_name='Next node')
+            shortestpath_df.to_excel(writer, index=False, startcol=1, startrow=len(forecast_df)+1, sheet_name='Pathcost')
+            shortestpath_df.to_excel(writer, index=False, startcol=1, startrow=len(forecast_df)+1, sheet_name='Next node')
+            dijkstra_pathcosts_df.to_excel(writer, index=False, startrow=len(forecast_df)+len(shortestpath_df)+2, sheet_name='Pathcost')
+            dijkstra_nextnodes_df.to_excel(writer, index=False, startrow=len(forecast_df)+len(shortestpath_df)+2, sheet_name='Next node')
+            parameters_df.to_excel(writer, index=False, sheet_name='Parameters')
+            pathcost_sheet = writer.sheets['Pathcost']
+            nextnode_sheet = writer.sheets['Next node']
+            parameters_sheet = writer.sheets['Parameters']
+            plot_sheet = writer.book.create_sheet(title='Plot')
+            plot_sheet.add_image(Image('plot.png'), 'A1')
+            for row in pathcost_sheet['A1:A10']:
+                for cell in row:
+                    cell.alignment = Alignment(horizontal='center')
+                    cell.font = Font(bold=True)
+            for row in nextnode_sheet['A1:A10']:
+                for cell in row:
+                    cell.alignment = Alignment(horizontal='center')
+                    cell.font = Font(bold=True)
+            pathcost_sheet.column_dimensions['A'].width = 15
+            pathcost_sheet.column_dimensions['B'].width = 15
+            pathcost_sheet.column_dimensions['C'].width = 15
+            nextnode_sheet.column_dimensions['A'].width = 15
+            nextnode_sheet.column_dimensions['B'].width = 15
+            nextnode_sheet.column_dimensions['C'].width = 15
+            parameters_sheet.column_dimensions['A'].width = 40
+            parameters_sheet.column_dimensions['B'].width = 70
+            pathcost_sheet.freeze_panes = 'D14'
+            nextnode_sheet.freeze_panes = 'D14'
+            highlight_fill = PatternFill(start_color='72ba93', end_color='72ba93', fill_type='solid')
+            for row in range(len(forecast_df)+len(shortestpath_df)+2):
+                pathcost_sheet.cell(row=row+1, column=1).fill = highlight_fill
+                nextnode_sheet.cell(row=row+1, column=1).fill = highlight_fill
+            for row, col in highlight_positions:
+                pathcost_sheet.cell(row=row+1, column=col+1).fill = highlight_fill
+                nextnode_sheet.cell(row=row+1, column=col+1).fill = highlight_fill
+        os.remove('plot.png')
 
 g = DGraph()

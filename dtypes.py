@@ -80,7 +80,10 @@ class DForecast():
             error_text += f"\n- The COP is {round(params.COP(min(self.oat), max(self.rswt)),2)}"
             error_text += f"\n=> Need a HP which can reach {round(max_load_elec,2)} kW electrical power"
             error_text += f"\n=> The given HP is undersized ({params.max_hp_elec_in} kW electrical power)"
-            raise ValueError(error_text)
+            print(error_text)
+            chose_continue = input("Do you want to continue? [y/n] ")
+            if chose_continue=='n':
+                raise ValueError(error_text)
 
         self.time = [x for x in time_list if (x>=params.start_time and x<=params.start_time.add(hours=params.horizon))]
         self.oat = [x for x,y in zip(self.oat, time_list) if y in self.time]        

@@ -76,7 +76,6 @@ class DParams():
         return -bb/(2*aa) - ((rwt-bb**2/(4*aa)+bb**2/(2*aa)-cc)/aa)**0.5 - rwt
     
     def get_available_top_temps(self):
-        # TODO: improve this with field data
         available_temps = [round(self.initial_top_temp)]
         x = round(self.initial_top_temp)
         while round(x + self.delta_T_inverse(x)) <= 175:
