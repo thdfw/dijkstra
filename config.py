@@ -35,6 +35,7 @@ class DParams():
         self.cop_intercept = config.getfloat('COP', 'INTERCEPT') 
         self.cop_oat_coeff = config.getfloat('COP', 'OAT_COEFF') 
         self.cop_lwt_coeff = config.getfloat('COP', 'LWT_COEFF') 
+        self.now_for_file = round(pendulum.now('UTC').timestamp())
         # Compute quadratic coefficients to estimate heating power from SWT
         x_rswt = np.array([self.no_power_rswt, self.intermediate_rswt, self.dd_rswt])
         y_hpower = np.array([0, self.intermediate_power, self.dd_power])

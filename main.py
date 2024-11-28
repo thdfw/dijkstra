@@ -19,8 +19,8 @@ class DGraph():
         self.create_edges()
         print("Solving Dijkstra...")
         self.solve_dijkstra()
-        print("Done")
         self.plot()
+        print("Exporting to Excel...")
         self.export_excel()
 
     def create_nodes(self):
@@ -173,7 +173,6 @@ class DGraph():
         plt.show()
 
     def export_excel(self):
-        print("Exporting to Excel...")
         # Along the shortest path
         electricitiy_used, heat_delivered = [], []
         node_i = self.initial_node
@@ -187,6 +186,7 @@ class DGraph():
             electricitiy_used.append(heat_output_HP / cop)
             heat_delivered.append(heat_output_HP)
             node_i = node_i.next_node
+        
         # First dataframe: the Dijkstra graph
         dijkstra_pathcosts = {}
         dijkstra_pathcosts['Top Temp [F]'] = [x.top_temp for x in self.nodes_by_energy]
@@ -200,6 +200,7 @@ class DGraph():
         dijkstra_nextnodes[self.params.horizon] = [np.nan for x in self.nodes[self.params.horizon]]
         dijkstra_pathcosts_df = pd.DataFrame(dijkstra_pathcosts)
         dijkstra_nextnodes_df = pd.DataFrame(dijkstra_nextnodes)
+        
         # Second dataframe: the forecasts
         forecast_df = pd.DataFrame({'Forecast':['0'], 'Unit':['0'], **{h: [0.0] for h in range(self.params.horizon+1)}})
         forecast_df.loc[0] = ['Price - total'] + ['cts/kWh'] + self.forecasts.elec_price
@@ -208,6 +209,7 @@ class DGraph():
         forecast_df.loc[3] = ['Heating load'] + ['kW'] + [round(x,2) for x in self.forecasts.load]
         forecast_df.loc[4] = ['OAT'] + ['F'] + [round(x,2) for x in self.forecasts.oat]
         forecast_df.loc[5] = ['Required SWT'] + ['F'] + [round(x) for x in self.forecasts.rswt]
+        
         # Third dataframe: the shortest path
         shortestpath_df = pd.DataFrame({'Shortest path':['0'], 'Unit':['0'], **{h: [0.0] for h in range(self.params.horizon+1)}})
         shortestpath_df.loc[0] = ['Electricity used'] + ['kWh'] + [round(x,3) for x in electricitiy_used] + [0]
@@ -215,13 +217,15 @@ class DGraph():
         shortestpath_df.loc[2] = ['Cost - total'] + ['cts'] + [round(x*y,2) for x,y in zip(electricitiy_used, self.forecasts.elec_price)] + [0]
         shortestpath_df.loc[3] = ['Cost - distribution'] + ['cts'] + [round(x*y,2) for x,y in zip(electricitiy_used, self.forecasts.dp)] + [0]
         shortestpath_df.loc[4] = ['Cost - LMP'] + ['cts'] + [round(x*y,2) for x,y in zip(electricitiy_used, self.forecasts.lmp)] + [0]
-        # Final dataframe: the results
+        
+        # Fourth dataframe: the results
         total_usd = round(self.initial_node.pathcost,2)
         total_elec = round(sum(electricitiy_used),2)
         total_heat = round(sum(heat_delivered),2)
         next_index = self.initial_node.next_node.index
         results = ['Cost ($)', total_usd, 'Electricity (kWh)', total_elec, 'Heat (kWh)', total_heat, 'Next step index', next_index]
         results_df = pd.DataFrame({'RESULTS':results})
+        
         # Highlight shortest path
         highlight_positions = []
         node_i = self.initial_node
@@ -229,7 +233,8 @@ class DGraph():
             highlight_positions.append((node_i.index+len(forecast_df)+len(shortestpath_df)+2, 3+node_i.time_slice))
             node_i = node_i.next_node
         highlight_positions.append((node_i.index+len(forecast_df)+len(shortestpath_df)+2, 3+node_i.time_slice))
-        # Read the parameters
+        
+        # Read the configuration file
         parameters = {}
         with open('parameters.conf', 'r') as file:
             for line in file:
@@ -241,10 +246,10 @@ class DGraph():
                         value = key_value[1].strip()
                         parameters[key] = value
         parameters_df = pd.DataFrame(list(parameters.items()), columns=['Variable', 'Value'])
+
         # Write to Excel
         os.makedirs('results', exist_ok=True)
-        NOW_FOR_FILE = 0
-        file_path = os.path.join('results', f'result_{NOW_FOR_FILE}.xlsx')
+        file_path = os.path.join('results', f'result_{self.params.now_for_file}.xlsx')
         with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
             results_df.to_excel(writer, index=False, sheet_name='Pathcost')
             results_df.to_excel(writer, index=False, sheet_name='Next node')

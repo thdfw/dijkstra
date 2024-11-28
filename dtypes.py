@@ -93,3 +93,6 @@ class DForecast():
         self.elec_price = [x for x,y in zip(self.elec_price, time_list) if y in self.time]
         self.load = [x for x,y in zip(self.load, time_list) if y in self.time]
         self.rswt = [x for x,y in zip(self.rswt, time_list) if y in self.time]
+
+        print(f"Max load: {max(self.load)}")
+        print(f"Max RSWT: {max(self.rswt)}")
