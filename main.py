@@ -132,7 +132,7 @@ class DGraph():
         ax[0].step(sp_time, self.forecasts.load, where='post', color='tab:red', alpha=0.6, label='Load')
         ax[0].legend(loc='upper left')
         ax[0].set_ylabel('Heat [kWh]')
-        ax[0].set_ylim([-0.5, 2.5*max(sp_hp_heat_out)])
+        ax[0].set_ylim([-0.5, 1.5*max(sp_hp_heat_out)])
         ax2 = ax[0].twinx()
         ax2.step(sp_time, self.forecasts.elec_price, where='post', color='gray', alpha=0.6, label='Elec price')
         ax2.legend(loc='upper right')
