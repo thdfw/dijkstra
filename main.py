@@ -1,9 +1,9 @@
-import matplotlib
-import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize, ListedColormap, BoundaryNorm
 import os
 import pandas as pd
 import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize, ListedColormap, BoundaryNorm
 from openpyxl.styles import PatternFill, Alignment, Font
 from openpyxl.drawing.image import Image
 from config import DParams
@@ -34,18 +34,12 @@ class DGraph():
                 for thermocline in range(1,self.params.num_layers+1)
                 if (time_slice, top_temp, thermocline) != (0, self.params.initial_top_temp, self.params.initial_thermocline)
             )
-            # TODO: check if you need index
-            self.nodes_by_energy = sorted(self.nodes[time_slice], key=lambda x: (x.energy, x.top_temp), reverse=True)
-            for n in self.nodes[time_slice]:
-                n.index = self.nodes_by_energy.index(n)+1
 
     def create_edges(self):
         self.edges = {}
-        self.bottom_node = DNode(0,self.params.available_top_temps[0], 0, self.params)
+        self.bottom_node = DNode(0, self.params.available_top_temps[0], 1, self.params)
         self.top_node = DNode(0, self.params.available_top_temps[-1], self.params.num_layers, self.params)
-        self.energy_between_consecutive_states = (DNode(0,self.params.available_top_temps[0],2,self.params).energy 
-                                                  - DNode(0,self.params.available_top_temps[0],1,self.params).energy)
-
+        
         for h in range(self.params.horizon):
             
             for node_now in self.nodes[h]:
@@ -53,10 +47,10 @@ class DGraph():
                 
                 for node_next in self.nodes[h+1]:
 
-                    # The energy difference between two states might be lower than energy between two nodes
+                    # The losses might be lower than energy between two nodes
                     losses = self.params.storage_losses_percent/100 * (node_now.energy-self.bottom_node.energy)
-                    if self.forecasts.load[h]==0 and losses>0 and losses<self.energy_between_consecutive_states:
-                        losses = self.energy_between_consecutive_states + 1/1e9
+                    if self.forecasts.load[h]==0 and losses>0 and losses<self.params.energy_between_nodes[node_now.top_temp]:
+                        losses = self.params.energy_between_nodes[node_now.top_temp] + 1/1e9
 
                     store_heat_in = node_next.energy - node_now.energy
                     hp_heat_out = store_heat_in + self.forecasts.load[h] + losses
@@ -95,8 +89,6 @@ class DGraph():
                     best_edge = best_edge_pos if (-best_edge_neg.hp_heat_out >= best_edge_pos.hp_heat_out) else best_edge_neg
                 node.pathcost = best_edge.head.pathcost + best_edge.cost
                 node.next_node = best_edge.head
-        # for a in self.edges[self.initial_node]:
-        #     print(a)
 
     def plot(self):
         # Walk along the shortest path (sp)
@@ -173,18 +165,24 @@ class DGraph():
         plt.show()
 
     def export_excel(self):
+        # Sort nodes by energy and assign an index
+        for time_slice in range(self.params.horizon+1):
+            self.nodes_by_energy = sorted(self.nodes[time_slice], key=lambda x: (x.energy, x.top_temp), reverse=True)
+            for n in self.nodes[time_slice]:
+                n.index = self.nodes_by_energy.index(n)+1
+
         # Along the shortest path
         electricitiy_used, heat_delivered = [], []
         node_i = self.initial_node
         while node_i.next_node is not None:
-            heat_to_store = node_i.next_node.energy - node_i.energy
-            losses = self.params.storage_losses_percent/100*(node_i.energy-self.bottom_node.energy)
-            if losses<self.energy_between_consecutive_states and losses>0 and self.forecasts.load[node_i.time_slice]==0:
-                losses = self.energy_between_consecutive_states + 1/1e9
-            heat_output_HP = heat_to_store + self.forecasts.load[node_i.time_slice] + losses
+            losses = self.params.storage_losses_percent/100 * (node_i.energy-self.bottom_node.energy)
+            if self.forecasts.load[node_i.time_slice]==0 and losses>0 and losses<self.params.energy_between_nodes[node_i.top_temp]:
+                losses = self.params.energy_between_nodes[node_i.top_temp] + 1/1e9
+            store_heat_in = node_i.next_node.energy - node_i.energy
+            hp_heat_out = store_heat_in + self.forecasts.load[node_i.time_slice] + losses
             cop = self.params.COP(oat=self.forecasts.oat[node_i.time_slice], lwt=node_i.next_node.top_temp)
-            electricitiy_used.append(heat_output_HP / cop)
-            heat_delivered.append(heat_output_HP)
+            heat_delivered.append(hp_heat_out)
+            electricitiy_used.append(hp_heat_out/cop)
             node_i = node_i.next_node
         
         # First dataframe: the Dijkstra graph
@@ -260,11 +258,15 @@ class DGraph():
             dijkstra_pathcosts_df.to_excel(writer, index=False, startrow=len(forecast_df)+len(shortestpath_df)+2, sheet_name='Pathcost')
             dijkstra_nextnodes_df.to_excel(writer, index=False, startrow=len(forecast_df)+len(shortestpath_df)+2, sheet_name='Next node')
             parameters_df.to_excel(writer, index=False, sheet_name='Parameters')
+            
+            # Add plot in a seperate sheet
+            plot_sheet = writer.book.create_sheet(title='Plot')
+            plot_sheet.add_image(Image('plot.png'), 'A1')
+
+            # Layout
             pathcost_sheet = writer.sheets['Pathcost']
             nextnode_sheet = writer.sheets['Next node']
             parameters_sheet = writer.sheets['Parameters']
-            plot_sheet = writer.book.create_sheet(title='Plot')
-            plot_sheet.add_image(Image('plot.png'), 'A1')
             for row in pathcost_sheet['A1:A10']:
                 for cell in row:
                     cell.alignment = Alignment(horizontal='center')
@@ -283,6 +285,8 @@ class DGraph():
             parameters_sheet.column_dimensions['B'].width = 70
             pathcost_sheet.freeze_panes = 'D14'
             nextnode_sheet.freeze_panes = 'D14'
+
+            # Highlight shortest path
             highlight_fill = PatternFill(start_color='72ba93', end_color='72ba93', fill_type='solid')
             for row in range(len(forecast_df)+len(shortestpath_df)+2):
                 pathcost_sheet.cell(row=row+1, column=1).fill = highlight_fill
@@ -290,6 +294,7 @@ class DGraph():
             for row, col in highlight_positions:
                 pathcost_sheet.cell(row=row+1, column=col+1).fill = highlight_fill
                 nextnode_sheet.cell(row=row+1, column=col+1).fill = highlight_fill
+
         os.remove('plot.png')
 
 g = DGraph()

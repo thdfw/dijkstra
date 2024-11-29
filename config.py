@@ -9,6 +9,8 @@ def to_celcius(t):
 class DParams():
 
     def __init__(self) -> None:
+
+        # Read configuration file
         config = configparser.ConfigParser()
         config.read('parameters.conf')
         self.start_time = pendulum.parse(config.get('parameters', 'START_TIME')).set(minute=0, second=0)
@@ -35,20 +37,21 @@ class DParams():
         self.cop_intercept = config.getfloat('COP', 'INTERCEPT') 
         self.cop_oat_coeff = config.getfloat('COP', 'OAT_COEFF') 
         self.cop_lwt_coeff = config.getfloat('COP', 'LWT_COEFF') 
-        self.now_for_file = round(pendulum.now('UTC').timestamp())
+
         # Compute quadratic coefficients to estimate heating power from SWT
         x_rswt = np.array([self.no_power_rswt, self.intermediate_rswt, self.dd_rswt])
         y_hpower = np.array([0, self.intermediate_power, self.dd_power])
         A = np.vstack([x_rswt**2, x_rswt, np.ones_like(x_rswt)]).T
         self.quadratic_coefficients = [float(x) for x in np.linalg.solve(A, y_hpower)] 
-        self.available_top_temps = self.get_available_top_temps()
+
+        self.available_top_temps, self.energy_between_nodes = self.get_available_top_temps()
+        self.now_for_file = round(pendulum.now('UTC').timestamp())
         self.min_cop = 1
         self.max_cop = 3
 
-    def COP(self, oat, lwt, fahrenheit=True):
-        if fahrenheit: #TODO: will it ever be in celcius?
-            oat = to_celcius(oat)
-            lwt = to_celcius(lwt)
+    def COP(self, oat, lwt):
+        oat = to_celcius(oat)
+        lwt = to_celcius(lwt)
         return self.cop_intercept + self.cop_oat_coeff*oat + self.cop_lwt_coeff*lwt      
 
     def required_heating_power(self, oat, ws):
@@ -82,7 +85,7 @@ class DParams():
         while round(x + self.delta_T_inverse(x)) <= 175:
             x = round(x + self.delta_T_inverse(x))
             available_temps.append(x)
-        while x <= 175:
+        while x+10 <= 175:
             x += 10
             available_temps.append(x)
         x = round(self.initial_top_temp)
@@ -93,4 +96,11 @@ class DParams():
             x += -10
             available_temps.append(x)
         available_temps = sorted(available_temps)
-        return available_temps
+
+        energy_between_nodes = {}
+        m_layer = self.storage_volume*3.785 / self.num_layers
+        for i in range(1,len(available_temps)):
+            temp_drop_f = available_temps[i] - available_temps[i-1]
+            energy_between_nodes[available_temps[i]] = round(m_layer * 4.187/3600 * temp_drop_f*5/9,3)
+
+        return available_temps, energy_between_nodes

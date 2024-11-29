@@ -22,7 +22,7 @@ class DNode():
         tt_idx = tt_idx-1 if tt_idx>0 else tt_idx
         self.bottom_temp = parameters.available_top_temps[tt_idx]
         self.energy = self.get_energy()
-        self.index = None #TODO: index
+        self.index = None
 
     def __repr__(self):
         return f"Node[time_slice:{self.time_slice}, top_temp:{self.top_temp}, thermocline:{self.thermocline}]"
@@ -93,6 +93,3 @@ class DForecast():
         self.elec_price = [x for x,y in zip(self.elec_price, time_list) if y in self.time]
         self.load = [x for x,y in zip(self.load, time_list) if y in self.time]
         self.rswt = [x for x,y in zip(self.rswt, time_list) if y in self.time]
-
-        print(f"Max load: {max(self.load)}")
-        print(f"Max RSWT: {max(self.rswt)}")
