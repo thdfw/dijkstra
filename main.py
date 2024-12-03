@@ -37,10 +37,12 @@ class DGraph():
 
     def create_edges(self):
         self.edges = {}
-        self.bottom_node = DNode(0, self.params.available_top_temps[0], 1, self.params)
+        self.bottom_node = DNode(0, self.params.available_top_temps[1], 1, self.params)
         self.top_node = DNode(0, self.params.available_top_temps[-1], self.params.num_layers, self.params)
         
         for h in range(self.params.horizon):
+
+            print(f"Building hour {h}")
             
             for node_now in self.nodes[h]:
                 self.edges[node_now] = []
