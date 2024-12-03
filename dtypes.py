@@ -75,7 +75,7 @@ class DForecast():
         max_load_elec = max(self.load) / params.COP(min(self.oat), max(self.rswt))
 
         if max_load_elec > params.max_hp_elec_in:
-            error_text = f"\nOn the coldest hour:"
+            error_text = f"\nThe current parameters indicate that on the coldest hour in the forecast:"
             error_text += f"\n- The heating requirement is {round(max(self.load),2)} kW"
             error_text += f"\n- The COP is {round(params.COP(min(self.oat), max(self.rswt)),2)}"
             error_text += f"\n=> Need a HP which can reach {round(max_load_elec,2)} kW electrical power"
