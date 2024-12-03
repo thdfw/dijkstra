@@ -1,5 +1,4 @@
 from config import DParams
-import pandas as pd
 import csv
 import pendulum
 
