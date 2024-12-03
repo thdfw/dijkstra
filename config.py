@@ -82,8 +82,8 @@ class DParams():
     def get_available_top_temps(self):
         available_temps = [round(self.initial_top_temp)]
         x = round(self.initial_top_temp)
-        while round(x + self.delta_T_inverse(x)) <= 175:
-            x = round(x + self.delta_T_inverse(x))
+        while round(x + self.delta_T_inverse(x),2) <= 175:
+            x = round(x + self.delta_T_inverse(x),2)
             available_temps.append(x)
         while x+10 <= 175:
             x += 10
