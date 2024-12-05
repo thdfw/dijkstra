@@ -19,9 +19,11 @@ class DGraph():
         self.create_edges()
         print("Solving Dijkstra...")
         self.solve_dijkstra()
+        self.generate_bid()
         self.plot()
         print("Exporting to Excel...")
         self.export_excel()
+        print("Done.")
 
     def create_nodes(self):
         self.initial_node = DNode(0, self.params.initial_top_temp, self.params.initial_thermocline, self.params)
@@ -42,7 +44,7 @@ class DGraph():
         
         for h in range(self.params.horizon):
 
-            print(f"Building hour {h}")
+            print(f"{h}/{self.params.horizon}")
             
             for node_now in self.nodes[h]:
                 self.edges[node_now] = []
@@ -94,6 +96,34 @@ class DGraph():
                     best_edge = best_edge_pos if (-best_edge_neg.hp_heat_out >= best_edge_pos.hp_heat_out) else best_edge_neg
                 node.pathcost = best_edge.head.pathcost + best_edge.cost
                 node.next_node = best_edge.head
+    
+    def generate_bid(self, plot=False):
+        self.pq_pairs = []
+        min_elec_ctskwh, max_elec_ctskwh = -100, 200
+        for elec_price in range(min_elec_ctskwh*10, max_elec_ctskwh*10):
+            elec_price = elec_price/10
+            elec_to_nextnode = []
+            pathcost_from_nextnode = []
+            for e in self.edges[self.initial_node]:
+                cop = self.params.COP(oat=self.forecasts.oat[0], lwt=e.head.top_temp)
+                elec_to_nextnode.append(e.hp_heat_out/cop)
+                pathcost_from_nextnode.append(e.head.pathcost)
+            cost_to_nextnode = [x*elec_price/100 for x in elec_to_nextnode]
+            pathcost_from_current_node = [x+y for x,y in zip(cost_to_nextnode, pathcost_from_nextnode)]
+            min_pathcost_elec = round(elec_to_nextnode[pathcost_from_current_node.index(min(pathcost_from_current_node))],2)
+            if self.pq_pairs:
+                if self.pq_pairs[-1][1] != min_pathcost_elec:
+                    self.pq_pairs.append((elec_price, min_pathcost_elec))
+            else:
+                self.pq_pairs.append((elec_price, min_pathcost_elec))
+        print(f"Price-Quantity pairs: {self.pq_pairs}")
+        if plot:
+            plt.step([x[0] for x in self.pq_pairs]+[max_elec_ctskwh], 
+                     [x[1] for x in self.pq_pairs]+[self.pq_pairs[-1][1]], 
+                     '-o', where='post')
+            plt.xlabel('Electricity price [cts/kWh]')
+            plt.ylabel('Optimal amount of electricity to buy [kWh]')
+            plt.show()
 
     def plot(self):
         # Walk along the shortest path (sp)

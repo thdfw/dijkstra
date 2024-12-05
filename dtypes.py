@@ -73,7 +73,7 @@ class DForecast():
 
         max_load_elec = max(self.load) / params.COP(min(self.oat), max(self.rswt))
 
-        if max_load_elec > params.max_hp_elec_in:
+        if max_load_elec > params.max_hp_elec_in and params.warn_hp_undersized:
             error_text = f"\nThe current parameters indicate that on the coldest hour of the year ({min(self.oat)} F):"
             error_text += f"\n- The heating requirement is {round(max(self.load),2)} kW"
             error_text += f"\n- The COP is {round(params.COP(min(self.oat), max(self.rswt)),2)}"

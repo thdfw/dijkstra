@@ -49,6 +49,7 @@ class DParams():
         self.min_cop = 1
         self.max_cop = 3
         self.soft_constraint: bool = True
+        self.warn_hp_undersized: bool = True
 
     def COP(self, oat, lwt):
         oat = to_celcius(oat)
