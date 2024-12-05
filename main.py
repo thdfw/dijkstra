@@ -76,8 +76,11 @@ class DGraph():
                                      and
                                     (node_now.top_temp < self.forecasts.rswt[h] or 
                                      node_next.top_temp < self.forecasts.rswt[h])):
-                                    # TODO: add a soft constraint (e.g. cost+=1e5)
-                                    continue
+                                    if self.params.soft_constraint:
+                                        # TODO: make cost punishment proportional to constraint violation
+                                        cost += 1e5
+                                    else:
+                                        continue
                             
                             self.edges[node_now].append(DEdge(node_now, node_next, cost, hp_heat_out))
 

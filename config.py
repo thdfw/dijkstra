@@ -48,6 +48,7 @@ class DParams():
         self.now_for_file = round(pendulum.now('UTC').timestamp())
         self.min_cop = 1
         self.max_cop = 3
+        self.soft_constraint: bool = True
 
     def COP(self, oat, lwt):
         oat = to_celcius(oat)
